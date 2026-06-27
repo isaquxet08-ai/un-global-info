@@ -1,6 +1,5 @@
 name = "un-data-worker"
 main = "index.js"
-# ⬇️ 添加下面这一行，日期填当天的
 compatibility_date = "2026-06-27"
 
 [[kv_namespaces]]
