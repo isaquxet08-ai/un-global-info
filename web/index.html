@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球国家信息站 · UN数据</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: #f5f7fa; display: flex; justify-content: center; padding: 20px; }
+        .container { max-width: 800px; width: 100%; background: white; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); padding: 24px; }
+        .tabs { display: flex; gap: 8px; background: #f1f3f5; padding: 6px; border-radius: 16px; margin-bottom: 24px; }
+        .tab { flex: 1; text-align: center; padding: 12px; border-radius: 12px; font-weight: 600; color: #64748b; cursor: pointer; transition: 0.2s; border: none; background: transparent; font-size: 16px; }
+        .tab.active { background: white; color: #0f172a; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .tab:hover:not(.active) { color: #0f172a; }
+        .content-pane { display: none; animation: fade 0.3s ease; }
+        .content-pane.active { display: block; }
+        @keyframes fade { from { opacity: 0.5; } to { opacity: 1; } }
+        .info-card { background: #f8fafc; border-radius: 16px; padding: 24px; text-align: center; }
+        .info-card img { width: 80px; height: auto; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e2e8f0; }
+        .info-card h2 { font-size: 28px; margin-bottom: 4px; }
+        .info-card .sub { color: #64748b; margin-bottom: 16px; display: block; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+        .info-item { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .info-item .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .info-item .value { font-size: 20px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+        .loading { text-align: center; color: #94a3b8; padding: 40px 0; }
+        .footnote { margin-top: 20px; font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px; }
+
+        /* 国际五常列表 */
+        .country-list { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        .country-item { background: white; border-radius: 12px; padding: 12px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+        .country-item.active { border-color: #0070f3; background: #f0f7ff; }
+        .country-item:hover { background: #f8fafc; }
+        .country-item img { width: 32px; height: 20px; margin-right: 8px; vertical-align: middle; }
+        .country-item span { font-weight: 600; color: #0f172a; }
+
+        /* 突发新闻区域 */
+        .breaking-news { background: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; border-radius: 8px; margin-top: 20px; }
+        .breaking-news .label { font-weight: 700; color: #dc2626; font-size: 16px; display: block; margin-bottom: 12px; }
+        .breaking-item { padding: 8px 0; border-bottom: 1px solid #fecaca; }
+        .breaking-item:last-child { border-bottom: none; }
+        .breaking-item .title { font-weight: 600; color: #1e293b; font-size: 15px; }
+        .breaking-item .date { font-size: 12px; color: #94a3b8; margin-top: 2px; display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- 标签切换 -->
+    <div class="tabs">
+        <button class="tab active" data-group="domestic">🇨🇳 国内信息</button>
+        <button class="tab" data-group="international">🌍 国际信息（五常）</button>
+    </div>
+    
+    <!-- 国内信息展示区 -->
+    <div id="domestic" class="content-pane active">
+        <div class="loading">⏳ 加载中国数据...</div>
+    </div>
+
+    <!-- 国际信息展示区 -->
+    <div id="international" class="content-pane">
+        <div class="loading">⏳ 加载五常数据...</div>
+    </div>
+
+    <div class="footnote">数据源：REST Countries · 联合国 ReliefWeb 突发新闻 / 每6小时更新</div>
+</div>
+
+<script>
+    // ---------- 核心逻辑 ----------
+    const domesticPane = document.getElementById('domestic');
+    const internationalPane = document.getElementById('international');
+    const tabs = document.querySelectorAll('.tab');
+
+    // 五常国家代码（除中国外）
+    const P5_CODES = ['US', 'RU', 'GB', 'FR'];
+    const P5_NAMES = { US: '美国', RU: '俄罗斯', GB: '英国', FR: '法国' };
+
+    // ---------- 工具函数：渲染单个国家信息 ----------
+    function renderCountryData(data, container) {
+        if (!data || data.error) {
+            container.innerHTML = `<div class="loading">❌ 未找到该国家数据</div>`;
+            return;
+        }
+        const name = data.name?.common || data.name || '未知';
+        const official = data.name?.official || '';
+        const pop = data.population?.toLocaleString() || '暂无';
+        const area = data.area?.toLocaleString() || '暂无';
+        const capital = data.capital?.[0] || '暂无';
+        const region = data.region || '暂无';
+        const flag = data.flags?.png || data.flags?.svg || '';
+        container.innerHTML = `
+            <div class="info-card">
+                ${flag ? `<img src="${flag}" alt="国旗">` : ''}
+                <h2>${name}</h2>
+                <span class="sub">${official} · ${region}</span>
+                <div class="info-grid">
+                    <div class="info-item"><div class="label">首都</div><div class="value">${capital}</div></div>
+                    <div class="info-item"><div class="label">人口</div><div class="value">${pop}</div></div>
+                    <div class="info-item"><div class="label">面积 (km²)</div><div class="value">${area}</div></div>
+                    <div class="info-item"><div class="label">ISO 代码</div><div class="value">${data.cca2 || '--'}</div></div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ---------- 加载中国（国内） ----------
+    async function loadDomestic() {
+        domesticPane.innerHTML = `<div class="loading">⏳ 加载中国数据...</div>`;
+        try {
+            const res = await fetch('/api/country?code=CN');
+            const data = await res.json();
+            renderCountryData(data, domesticPane);
+        } catch (e) {
+            domesticPane.innerHTML = `<div class="loading">❌ 网络请求失败</div>`;
+        }
+    }
+
+    // ---------- 加载五常（国际） ----------
+    let p5DataCache = {};
+
+    async function loadInternational() {
+        internationalPane.innerHTML = `<div class="loading">⏳ 加载五常数据...</div>`;
+        try {
+            const promises = P5_CODES.map(code => 
+                fetch(`/api/country?code=${code}`).then(res => res.json())
+            );
+            const results = await Promise.all(promises);
+            P5_CODES.forEach((code, idx) => {
+                p5DataCache[code] = results[idx];
+            });
+
+            let html = `<div class="country-list">`;
+            P5_CODES.forEach(code => {
+                const data = p5DataCache[code];
+                const flag = data?.flags?.png || '';
+                const name = data?.name?.common || code;
+                html += `
+                    <div class="country-item" data-code="${code}">
+                        ${flag ? `<img src="${flag}" alt="">` : ''}
+                        <span>${name}</span>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+            html += `<div id="p5-detail" class="info-card" style="margin-top:12px;">点击上方国家查看详情</div>`;
+            // 突发信息容器
+            html += `
+                <div class="breaking-news">
+                    <span class="label">🚨 联合国突发新闻</span>
+                    <div id="breaking-content">⏳ 加载中...</div>
+                </div>
+            `;
+            internationalPane.innerHTML = html;
+
+            // 默认选中第一个（美国）
+            const firstItem = internationalPane.querySelector('.country-item');
+            if (firstItem) firstItem.classList.add('active');
+            const firstCode = P5_CODES[0];
+            renderCountryData(p5DataCache[firstCode], document.getElementById('p5-detail'));
+
+            internationalPane.querySelectorAll('.country-item').forEach(item=>{
+                item.addEventListener('click', function() {
+                    internationalPane.querySelectorAll('.country-item').forEach(el=>el.classList.remove('active'));
+                    this.classList.add('active');
+                    const code=this.dataset.code;
+                    renderCountryData(p5DataCache[code], document.getElementById('p5-detail'));
+                });
+            });
+
+            // 加载真实突发新闻
+            loadBreakingNews();
+
+        } catch (e) {
+            internationalPane.innerHTML=`<div class="loading">❌ 加载五常数据失败</div>`;
+            console.error(e);
+        }
+    }
+
+    // ---------- 真实 ReliefWeb API 突发新闻 ----------
+    async function loadBreakingNews() {
+        const container=document.getElementById('breaking-content');
+        if (!container) return;
+        try {
+            // ReliefWeb API - 获取最新5条报告（按发布时间排序）
+            const url='https://api.reliefweb.int/v1/reports?appname=my-un-site&limit=5&sort[]=date:desc';
+            const res=await fetch(url);
+            const json=await res.json();
+            const data=json.data || [];
+
+            if (data.length === 0) {
+                container.innerHTML='<div style="color:#94a3b8;">暂无突发新闻</div>';
+                return;
+            }
+
+            let html='';
+            data.forEach(item=>{
+                const title=item.fields?.title || '无标题';
+                const date=item.fields?.date?.created || '';
+                const formattedDate=date ? new Date(date).function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function function toLocaleString() { [native code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }() { [本地的code] }('zh-CN') : '';
+                html += `
+<div class="breaking-item">
+                        <div class="title">${title}</div>
+                        <span class="date">${formattedDate}</span>
+</div>
+                `;
+});
+            container.innerHTML=html;
+
+}catch(错误){
+container.innerHTML='<div style="color：#94a3b8；">⚠️ 无法获取突发新闻</div>'；
+console.error('ReliefWeb API错误：'，误差)；
+}
+}
+
+// ---------- 标签切换 ----------
+tabs.forEach(标签=>{
+标签.addEventListener('click'，function(){
+            tabs.forEach(t=>t.classList.remove('active'));
+            this.classList.add('active');
+            const group=this.dataset.group;
+            document.querySelectorAll('.content-pane').forEach(p=>p.classList.remove('active'));
+if(group===‘国内’){
+文件。getElementById('国内').classList.Add('active')；
+loadDomestic()；
+}else{
+文件。getElementById('国际').classList.Add('active')；
+loadInternational()；
+            }
+        });
+    });
+
+    // 默认加载国内
+loadDomestic()；
+</剧本>
+</body>
+</html>
