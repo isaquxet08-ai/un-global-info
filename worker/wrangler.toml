@@ -1,0 +1,11 @@
+name = "un-data-worker"
+main = "index.js"
+
+# 绑定 KV 存储（先在 Cloudflare 后台创建 KV Namespace，再把 ID 填进来）
+[[kv_namespaces]]
+binding = "UN_DATA"
+id = "59dca7d041bb464e85078458942a6a92"   # ⚠️ 请前往 Cloudflare 后台创建并替换
+
+# 定时触发器（每天四次）
+[triggers]
+crons = ["0 */6 * * *"]
